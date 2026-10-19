@@ -1,0 +1,76 @@
+{
+    "name": "@nenichat/domain",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Shared Nenichat domain logic (entities, use cases, adapters) reused across Nenichat projects.",
+    "license": "UNLICENSED",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./Wapp": {
+            "types": "./dist/Wapp/index.d.ts",
+            "default": "./dist/Wapp/index.js"
+        },
+        "./Containers": {
+            "types": "./dist/Containers/index.d.ts",
+            "default": "./dist/Containers/index.js"
+        },
+        "./Chats/infra/api": {
+            "types": "./dist/Chats/infra/api/index.d.ts",
+            "default": "./dist/Chats/infra/api/index.js"
+        },
+        "./Messages/infra/api": {
+            "types": "./dist/Messages/infra/api/index.d.ts",
+            "default": "./dist/Messages/infra/api/index.js"
+        },
+        "./Suggestions": {
+            "types": "./dist/Suggestions/index.d.ts",
+            "default": "./dist/Suggestions/index.js"
+        },
+        "./*": {
+            "types": "./dist/*.d.ts",
+            "default": "./dist/*.js"
+        }
+    },
+    "files": [
+        "dist",
+        "src",
+        "README.md"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "clean": "rm -rf dist"
+    },
+    "peerDependencies": {
+        "@supabase/supabase-js": "^2.86.0",
+        "@tanstack/react-table": "^8.21.3",
+        "cron-parser": "^5.4.0",
+        "openai": "^7.5.0",
+        "pg": "^8.16.3",
+        "zod": "^4.3.5"
+    },
+    "peerDependenciesMeta": {
+        "@supabase/supabase-js": { "optional": true },
+        "@tanstack/react-table": { "optional": true },
+        "cron-parser": { "optional": true },
+        "openai": { "optional": true },
+        "pg": { "optional": true },
+        "zod": { "optional": true }
+    },
+    "devDependencies": {
+        "@supabase/supabase-js": "^2.86.0",
+        "@tanstack/react-table": "^8.21.3",
+        "@types/node": "^20",
+        "@types/pg": "^8.15.6",
+        "cron-parser": "^5.4.0",
+        "openai": "^7.5.0",
+        "pg": "^8.16.3",
+        "typescript": "^5",
+        "zod": "^4.3.5"
+    }
+}
