@@ -1,125 +1,369 @@
 # @nenichat/domain
 
-Shared Nenichat domain logic — the private, single source of truth for our
-business rules, consumed by our other projects (starting with `nenichat-web`).
+Shared domain logic for Nenichat projects: entities, use cases and adapters, consumed
+by `nenichat-web` and Node services.
 
-**This is proprietary IP. It must stay in a private repository and must never be
-published to the public npm registry.**
+The package ships compiled CommonJS and type declarations in `dist/`. Consumers install
+it as a git dependency and import through the paths declared in `package.json#exports`.
 
-## What's inside
+Private package. Do not publish it to a public registry.
 
-The package is organised by context, each with three layers:
+## Setup
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm build
+```
+
+## Verifying a change
+
+The package has no dev server. A change is correct when all five checks pass:
+
+1. `pnpm typecheck` passes.
+2. `pnpm test` passes.
+3. `pnpm build` passes and the new files exist in `dist/`.
+4. The new code runs from `dist/` through its public import path.
+5. The consuming project works with the change.
+
+### 1. Type check
+
+```bash
+pnpm typecheck
+```
+
+Use watch mode while editing:
+
+```bash
+pnpm exec tsc -p tsconfig.json --noEmit --watch
+```
+
+It rechecks on save and does not write `dist/`. Strict mode is enabled, so an interface
+change breaks every implementation until all of them are updated.
+
+### 2. Run the tests
+
+```bash
+pnpm test
+```
+
+Tests live beside the code in `__tests__/` and import from `src/` directly. See
+[Testing](#testing) for the configuration and the live gateway suite.
+
+### 3. Build
+
+```bash
+pnpm build
+```
+
+`tsc` writes CommonJS and `.d.ts` files to `dist/`. `dist/` is committed and is what
+consumers install. A change that is not rebuilt and committed is not delivered.
+
+### 4. Run the built code
+
+Run from `dist/`, not from `src/`:
+
+```bash
+node -e "const { matchProduct } = require('./dist/Orders/app/product-matching'); \
+         console.log(matchProduct('Choclate', { name: 'Chocolate' }))"
+```
+
+Expected output: `true`.
+
+Or use a temporary file:
+
+```js
+// scratch.cjs
+const { matchProduct } = require('./dist/Orders/app/product-matching')
+
+console.log(matchProduct('Choclate', { name: 'Chocolate' })) // true
+console.log(matchProduct('Laptop', { name: 'Notebook' }))    // false
+```
+
+```bash
+node scratch.cjs
+rm scratch.cjs
+```
+
+Require by package name to test the export map:
+
+```bash
+node -e "require('@nenichat/domain/Orders/app/product-matching')"
+```
+
+If this throws `ERR_PACKAGE_PATH_NOT_EXPORTED`, the path is not exported and consumers
+cannot import it.
+
+This step catches problems that `tsc` does not: files excluded from the build, missing
+export entries, modules that read `process.env` at import, missing peer dependencies and
+CommonJS interop errors.
+
+### 5. Test in the consumer
+
+```bash
+# in domain/
+pnpm build
+pnpm link --global
+
+# in web/
+pnpm link --global @nenichat/domain
+pnpm dev
+```
+
+Run the route, page or job that uses the change. Restart `next dev` after rebuilding the
+package; Next does not watch `node_modules`.
+
+To restore the dependency declared in `web/package.json`:
+
+```bash
+# in web/
+pnpm install --force
+```
+
+Alternatively, set `"@nenichat/domain": "link:../domain"` in `web/package.json`, run
+`pnpm install`, and revert it before committing.
+
+## Adding a feature
+
+Code is organised by context, each with three layers:
 
 ```
 src/
   {Context}/
-    domain/   entities, value objects, repository interfaces  (pure, no I/O)
-    app/      use cases / application services
-    infra/    adapters: GoWapp API clients, Supabase / pg repositories, LLM client
+    domain/   entities, value objects, repository interfaces (no I/O)
+    app/      use cases, services, read models in dto/
+    infra/    adapters: Supabase, pg, GoWapp API, LLM
 ```
 
-Contexts: `Audiences`, `Campaigns`, `Chats`, `Contacts`, `Containers`,
-`Expenses`, `Messages`, `Orders`, `Products`, `Shared`, `Suggestions`,
-`Templates`, `Wapp`.
+Contexts: `Audiences`, `Campaigns`, `Chats`, `Contacts`, `Containers`, `Expenses`,
+`Messages`, `Orders`, `Products`, `Shared`, `Suggestions`, `Templates`, `Wapp`.
 
-Consumers should prefer **deep imports** so that server-only adapters (`pg`,
-`openai`, `@supabase/supabase-js`) are not pulled into bundles that don't need
-them:
+### Example: find a contact by username
+
+Add the method to the repository interface in `domain/`:
 
 ```ts
-import { IContact } from "@nenichat/domain/Contacts/domain/IContact";
-import { SupabaseContactRepository } from "@nenichat/domain/Contacts/infra/persistance/SupabaseContactRepository";
+// src/Contacts/domain/IContactRepository.ts
+findByUsername(businessId: number, username: string): Promise<IContact | null>;
 ```
 
-A root barrel (`@nenichat/domain`) also exists for convenience.
+Implement it in every adapter. TypeScript reports an error until both are done:
 
-## How it is distributed
+```ts
+// src/Contacts/infra/persistance/SupabaseContactRepository.ts
+async findByUsername(businessId: number, username: string): Promise<IContact | null> {
+  const { data, error } = await this.supabase
+    .from("contacts")
+    .select(ALL_ROWS_AND_JOIN_PHONE_NUMBER)
+    .eq("business_id", businessId)
+    .eq("username", username)
+    .maybeSingle();
 
-It is consumed as a **git dependency** straight from this private repo — no npm
-registry involved. A consumer's `package.json` just includes:
-
-```jsonc
-"dependencies": {
-  "@nenichat/domain": "github:MindSetFPS/domain#main"
+  if (error) throw error;
+  return data ? this.mapToContact(data) : null;
 }
 ```
 
-`#main` tracks the latest commit on the default branch. `pnpm` records the
-resolved commit in the lockfile, so installs stay reproducible until you run
-`pnpm install` again. To pin a released version instead, push a tag and use
-`github:MindSetFPS/domain#v0.1.0`.
+The same method is required in `src/Contacts/infra/persistance/ContactRepository.ts`
+(the `pg` adapter).
 
-Because the repo is private, the machine running the install needs read access
-(a GitHub token in `GH_TOKEN`/`NODE_AUTH_TOKEN`, or SSH-key access for local
-installs — pnpm/git uses your normal git credentials).
+Add a use case in `app/` only when there is behaviour to coordinate. Use kebab-case file
+names and one exported function or class per file:
 
-### Why the built `dist/` is committed
+```ts
+// src/Contacts/app/find-contact-by-username.ts
+export async function findContactByUsername(
+  repo: IContactRepository,
+  businessId: number,
+  username: string,
+) {
+  return repo.findByUsername(businessId, username);
+}
+```
 
-The package ships **pre-compiled CommonJS + type declarations** in `dist/`, and
-`dist/` is committed to this repo. That means installing it needs no build step
-— it works the same under pnpm, npm, yarn and bun.
+Deep imports need no registration. The `"./*"` entry in `package.json#exports` maps them
+directly into `dist/`. Add `src/{Context}/index.ts` when a stable alias is needed; see
+`Containers/index.ts`. The root `src/index.ts` is limited to modules that are safe in
+every bundle. It currently exports `Wapp`, `Chats/infra/api`, `Messages/infra/api`,
+`Containers` and `Suggestions`. Adding server-only code there pulls it into every
+consumer bundle.
 
-The alternative (a `prepare` build script) does **not** work well for a private
-git dependency with modern pnpm: pnpm blocks git-dependency build scripts behind
-an allowlist whose key includes the resolved commit hash, so it would break on
-every release. Committing `dist/` avoids that entirely.
+### Checklist
 
-**Consequence:** whenever you change anything under `src/`, you must rebuild and
-commit `dist/` or consumers will keep using the old build:
+- [ ] `pnpm typecheck` passes
+- [ ] `pnpm build` passes and the new files exist in `dist/`
+- [ ] The new path resolves through `package.json#exports`
+- [ ] Pure logic has a test in `__tests__/`
+- [ ] The change has been exercised in the consumer
+- [ ] `src/` and `dist/` are committed together
+
+## Conventions
+
+**Layering.** `domain/` contains no I/O. `app/` coordinates use cases. `infra/` holds
+adapters. Keep dependencies pointing inward.
+
+**Ports.** Adding a method to a repository interface requires implementing it in every
+adapter. TypeScript enforces this; do not work around it with casts.
+
+**Exports.** Consumers use deep imports. Server-only adapters (`pg`, `openai`,
+`@supabase/supabase-js`) must not reach client bundles.
+
+**Peer dependencies.** A third-party library used in the public API goes in all three
+places:
+
+```jsonc
+"peerDependencies":     { "lib": "^x" },
+"peerDependenciesMeta": { "lib": { "optional": true } },
+"devDependencies":      { "lib": "^x" }
+```
+
+Do not add it to `dependencies`. The consumer must share one copy; duplicate copies
+produce incompatible types, such as two `SupabaseClient` definitions.
+
+**Environment.** `Shared/infra/persistance/db.ts` reads `DB_USER`, `DB_PASSWORD`,
+`DB_HOST`, `DB_PORT` and `DB_NAME` at import time and throws when any is missing. Do not
+import the `pg` adapters from `domain/`, `app/`, or from tests that do not provide these
+variables.
+
+**Runtime.** The output is CommonJS for Node. `nenichat-web` runs on Cloudflare Workers,
+where `pg` cannot open a TCP connection. Adapters imported by `web` must use Supabase or
+HTTP.
+
+**Multitenancy.** Every query filters by `business_id`.
+
+**Generated files.** Do not edit `dist/` by hand. `pnpm clean` deletes it and
+`pnpm build` rewrites it.
+
+## Testing
+
+Tests run with Jest and `ts-jest`. They live in `__tests__/` beside the code and import
+from `src/` directly. `tsconfig.build.json` excludes them from `dist/`, so they are not
+part of the published artifact.
 
 ```bash
-pnpm build          # tsc -> dist/
+pnpm test          # run once
+pnpm test:watch    # re-run on change
+```
+
+Configuration:
+
+- `jest.config.cjs` selects `src/**/__tests__/**/*.test.ts` and `*.test.tsx`, using the
+  Node environment.
+- `tsconfig.json` includes `src/**/*`, including tests, and loads the Jest types.
+- `tsconfig.build.json` excludes tests and is used by `pnpm build`.
+
+Current suites:
+
+| Suite | Scope |
+|---|---|
+| `Orders/app/__tests__/product-matching.test.ts` | product matching logic |
+| `Chats/infra/api/__tests__/GoWappChatRepository.test.ts` | GoWapp chat adapter |
+| `Containers/Infrastructure/Dokploy/__tests__/DokployContainerService.test.ts` | Dokploy container service |
+| `Wapp/infra/__tests__/wapp-live.test.ts` | live gateway, skipped unless configured |
+
+`wapp-live.test.ts` calls a real GoWhatsApp gateway. It reads `.env` at the repository
+root. When the file or `NEXT_PUBLIC_GOWAPP_HOST_URL` is missing, the suite is skipped:
+
+```dotenv
+NEXT_PUBLIC_GOWAPP_HOST_URL=http://192.168.1.64:...
+GOWAPP_USER=...
+GOWAPP_PASSWORD=...
+```
+
+The business id is hardcoded as `115` in that file. The tests are read-only.
+
+Tests that need a database, a network call or environment variables are integration
+tests. Do not add them to the pure suite.
+
+## Releasing
+
+```bash
+pnpm typecheck
+pnpm build
 git add -A
-git commit -m "your change"
+git commit -m "feat(Contacts): find by username"
 git push
 ```
 
-## Peer dependencies
-
-The libraries that cross the package's public API surface are declared as
-(optional) **peer dependencies**: `@supabase/supabase-js`, `pg`, `openai`,
-`zod`, `cron-parser`, `@tanstack/react-table`.
-
-They are peers rather than direct dependencies so that the consumer and this
-package share **one** copy of each library. If they were bundled, TypeScript
-would see two different `SupabaseClient` types (they have protected members) and
-refuse to compile — this was the main obstacle in the migration.
-
-A consumer that only uses the pure `domain/` layer needs none of them. A
-consumer that uses `infra/` must have the matching library installed itself.
-
-## Adding it to another project
+Consumers update with:
 
 ```bash
-# pnpm / npm / yarn
-pnpm add "github:MindSetFPS/domain#main"
+pnpm update @nenichat/domain
 ```
 
+Tag releases that other projects depend on, so they can be pinned:
+
+```bash
+git tag v0.2.0
+git push --tags
+```
+
+## Distribution
+
+Consumers declare the package as a git dependency:
+
 ```jsonc
-// bun (package.json)
 "dependencies": {
-  "@nenichat/domain": "github:MindSetFPS/domain#main"
+  "@nenichat/domain": "github:MindSetFPS/nenichat-domain#main"
 }
 ```
 
-Then import via the deep paths shown above.
+`#main` tracks the latest commit. The lockfile pins the resolved commit until the
+consumer runs an update. The repository is private, so the installing machine needs
+read access through normal git credentials or a GitHub token.
 
-## Local development
+`dist/` is committed instead of built during install because pnpm blocks build scripts
+for git dependencies behind a per-commit allowlist. Committing the build works with
+pnpm, npm, yarn and bun.
 
-```bash
-pnpm install         # install deps for compiling/testing
-pnpm build           # emit dist/
-pnpm typecheck       # type-check without emitting
-```
+## Troubleshooting
 
-## First-time push to GitHub
-
-This directory is already an initialised git repository (branch `main`) with the
-source and the built `dist/` committed. Create an empty **private** repo named
-`domain` under the `MindSetFPS` account, then:
+**`web` runs old code after a change.**
+Rebuild the package, confirm the link, and restart `next dev`:
 
 ```bash
-git remote add origin https://github.com/MindSetFPS/domain.git
-git push -u origin main
+cd domain && pnpm build && pnpm link --global
+cd web && pnpm link --global @nenichat/domain && pnpm dev
 ```
-# nenichat-domain
+
+**`tsc` passes but the consumer cannot import the module.**
+Confirm `dist/<path>.js` exists and that `require('@nenichat/domain/<path>')` works from
+this repository.
+
+**`Error: Missing environment variable: DB_USER`.**
+A `pg` adapter was imported. Use the Supabase adapter in `web`, or provide the `DB_*`
+variables in a Node process.
+
+**Two `SupabaseClient` types.**
+The package has more than one installed copy of `@supabase/supabase-js`. It must be a
+peer dependency in the consumer.
+
+**Tests are missing from `dist/`.**
+Test files are excluded by `tsconfig.json`. Tests are not published.
+
+## Reference
+
+| Command | Result |
+|---|---|
+| `pnpm install` | installs compiler dependencies and optional peers |
+| `pnpm typecheck` | runs `tsc --noEmit` |
+| `pnpm exec tsc -p tsconfig.json --noEmit --watch` | watch mode, no output |
+| `pnpm test` | runs the Jest suite |
+| `pnpm test:watch` | runs Jest in watch mode |
+| `pnpm build` | writes CommonJS and declarations to `dist/` |
+| `pnpm clean` | deletes `dist/` |
+| `node -e "require('./dist/...')"` | runs the built code |
+
+```
+src/
+  {Context}/
+    domain/                    entities, value objects, repository interfaces
+    app/                       use cases, services, dto/ read models
+    infra/
+      persistance/             Supabase*Repository, pg *Repository
+      api/                     GoWapp HTTP clients
+  Shared/
+    infra/llm/                 OpenAI-compatible client, structured output, models
+    infra/persistance/db.ts    pg pool, reads DB_* at import
+  index.ts                     root barrel, keep small and bundle-safe
+```

@@ -5,11 +5,15 @@ import { Wapp } from '../..';
 jest.setTimeout(15000);
 
 function envFromDotEnv(key: string): string | undefined {
-    const line = require('fs')
-        .readFileSync('.env', 'utf8')
-        .split('\n')
-        .find((l: string) => l.startsWith(`${key}=`));
-    return line ? line.slice(key.length + 1).trim() : undefined;
+    try {
+        const line = require('fs')
+            .readFileSync('.env', 'utf8')
+            .split('\n')
+            .find((l: string) => l.startsWith(`${key}=`));
+        return line ? line.slice(key.length + 1).trim() : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 const GATEWAY_URL = envFromDotEnv('NEXT_PUBLIC_GOWAPP_HOST_URL');

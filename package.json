@@ -42,8 +42,10 @@
         "README.md"
     ],
     "scripts": {
-        "build": "tsc -p tsconfig.json",
+        "build": "tsc -p tsconfig.build.json",
         "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test": "jest",
+        "test:watch": "jest --watch",
         "clean": "rm -rf dist"
     },
     "peerDependencies": {
@@ -55,21 +57,37 @@
         "zod": "^4.3.5"
     },
     "peerDependenciesMeta": {
-        "@supabase/supabase-js": { "optional": true },
-        "@tanstack/react-table": { "optional": true },
-        "cron-parser": { "optional": true },
-        "openai": { "optional": true },
-        "pg": { "optional": true },
-        "zod": { "optional": true }
+        "@supabase/supabase-js": {
+            "optional": true
+        },
+        "@tanstack/react-table": {
+            "optional": true
+        },
+        "cron-parser": {
+            "optional": true
+        },
+        "openai": {
+            "optional": true
+        },
+        "pg": {
+            "optional": true
+        },
+        "zod": {
+            "optional": true
+        }
     },
     "devDependencies": {
         "@supabase/supabase-js": "^2.86.0",
         "@tanstack/react-table": "^8.21.3",
+        "@types/jest": "^30.0.0",
         "@types/node": "^20",
         "@types/pg": "^8.15.6",
         "cron-parser": "^5.4.0",
+        "jest": "^30.5.2",
+        "jest-environment-node": "^30.5.2",
         "openai": "^7.5.0",
         "pg": "^8.16.3",
+        "ts-jest": "^29.4.15",
         "typescript": "^5",
         "zod": "^4.3.5"
     }
